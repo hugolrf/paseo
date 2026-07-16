@@ -831,6 +831,8 @@ export const en = {
     sections: {
       sessions: "History",
       schedules: "Schedules",
+      tasks: "Tasks",
+      prs: "Pull Requests",
     },
     worktreeSetup: {
       title: "Set up worktree scripts",

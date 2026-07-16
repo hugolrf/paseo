@@ -850,6 +850,8 @@ export const fr: TranslationResources = {
     sections: {
       sessions: "Historique",
       schedules: "Planifications",
+      tasks: "Tâches",
+      prs: "Pull Requests",
     },
     worktreeSetup: {
       title: "Configurer les scripts d'arbre de travail",

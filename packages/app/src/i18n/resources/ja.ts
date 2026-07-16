@@ -837,6 +837,8 @@ export const ja: TranslationResources = {
     sections: {
       sessions: "履歴",
       schedules: "スケジュール",
+      tasks: "タスク",
+      prs: "プルリクエスト",
     },
     worktreeSetup: {
       title: "ワークツリースクリプトを設定",

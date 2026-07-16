@@ -455,6 +455,38 @@ type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
 type KillTerminalPayload = KillTerminalResponse["payload"];
 type CaptureTerminalPayload = CaptureTerminalResponse["payload"];
+export type TasksCoreCreatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "tasks.core.create.response" }
+>["payload"];
+export type TasksCoreListPayload = Extract<
+  SessionOutboundMessage,
+  { type: "tasks.core.list.response" }
+>["payload"];
+export type TasksCoreUpdatePayload = Extract<
+  SessionOutboundMessage,
+  { type: "tasks.core.update.response" }
+>["payload"];
+export type TasksCoreDeletePayload = Extract<
+  SessionOutboundMessage,
+  { type: "tasks.core.delete.response" }
+>["payload"];
+export type TasksOriginsGetIssuePayload = Extract<
+  SessionOutboundMessage,
+  { type: "tasks.origins.get_issue.response" }
+>["payload"];
+export type CheckoutGithubListPullRequestsPayload = Extract<
+  SessionOutboundMessage,
+  { type: "checkout.github.list_pull_requests.response" }
+>["payload"];
+export type CheckoutGithubGetPrDiffPayload = Extract<
+  SessionOutboundMessage,
+  { type: "checkout.github.get_pr_diff.response" }
+>["payload"];
+export type CheckoutGithubReviewPrPayload = Extract<
+  SessionOutboundMessage,
+  { type: "checkout.github.review_pr.response" }
+>["payload"];
 type ChatCreatePayload = Extract<
   SessionOutboundMessage,
   { type: "chat/create/response" }
@@ -3589,6 +3621,138 @@ export class DaemonClient {
         cwd,
         enabled: input.enabled,
         ...(input.enabled ? { mergeMethod: input.method } : {}),
+      },
+    });
+  }
+
+  async checkoutGithubListPullRequests(
+    input: { cwd: string; query?: string; limit?: number },
+    requestId?: string,
+  ): Promise<CheckoutGithubListPullRequestsPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"checkout.github.list_pull_requests.response">(
+      {
+        requestId,
+        message: {
+          type: "checkout.github.list_pull_requests.request",
+          cwd: input.cwd,
+          ...(input.query !== undefined ? { query: input.query } : {}),
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        },
+      },
+    );
+  }
+
+  async checkoutGithubGetPrDiff(
+    input: { cwd: string; prNumber: number },
+    requestId?: string,
+  ): Promise<CheckoutGithubGetPrDiffPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"checkout.github.get_pr_diff.response">({
+      requestId,
+      message: {
+        type: "checkout.github.get_pr_diff.request",
+        cwd: input.cwd,
+        prNumber: input.prNumber,
+      },
+    });
+  }
+
+  async checkoutGithubReviewPr(
+    input: {
+      cwd: string;
+      prNumber: number;
+      event: "approve" | "request_changes" | "comment";
+      body?: string;
+    },
+    requestId?: string,
+  ): Promise<CheckoutGithubReviewPrPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"checkout.github.review_pr.response">({
+      requestId,
+      message: {
+        type: "checkout.github.review_pr.request",
+        cwd: input.cwd,
+        prNumber: input.prNumber,
+        event: input.event,
+        ...(input.body !== undefined ? { body: input.body } : {}),
+      },
+    });
+  }
+
+  async tasksCoreCreate(
+    input: {
+      title: string;
+      body?: string;
+      repos?: string[];
+      agentIds?: string[];
+      origin?: string;
+      priority?: number;
+      assignee?: string;
+    },
+    requestId?: string,
+  ): Promise<TasksCoreCreatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"tasks.core.create.response">({
+      requestId,
+      message: {
+        type: "tasks.core.create.request",
+        ...input,
+      },
+    });
+  }
+
+  async tasksCoreList(
+    input: { repo?: string } = {},
+    requestId?: string,
+  ): Promise<TasksCoreListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"tasks.core.list.response">({
+      requestId,
+      message: {
+        type: "tasks.core.list.request",
+        ...(input.repo !== undefined ? { repo: input.repo } : {}),
+      },
+    });
+  }
+
+  async tasksCoreUpdate(
+    input: {
+      id: string;
+      title?: string;
+      status?: "draft" | "open" | "in_progress" | "done" | "failed";
+      body?: string;
+      repos?: string[];
+      agentIds?: string[];
+      origin?: string;
+      priority?: number;
+      assignee?: string;
+    },
+    requestId?: string,
+  ): Promise<TasksCoreUpdatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"tasks.core.update.response">({
+      requestId,
+      message: {
+        type: "tasks.core.update.request",
+        ...input,
+      },
+    });
+  }
+
+  async tasksCoreDelete(id: string, requestId?: string): Promise<TasksCoreDeletePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"tasks.core.delete.response">({
+      requestId,
+      message: {
+        type: "tasks.core.delete.request",
+        id,
+      },
+    });
+  }
+
+  async tasksOriginsGetIssue(
+    ref: string,
+    requestId?: string,
+  ): Promise<TasksOriginsGetIssuePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"tasks.origins.get_issue.response">({
+      requestId,
+      message: {
+        type: "tasks.origins.get_issue.request",
+        ref,
       },
     });
   }

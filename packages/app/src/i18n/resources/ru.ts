@@ -844,6 +844,8 @@ export const ru: TranslationResources = {
     sections: {
       sessions: "История",
       schedules: "Расписания",
+      tasks: "Задачи",
+      prs: "Пул-реквесты",
     },
     worktreeSetup: {
       title: "Настройка сценариев рабочего дерева",

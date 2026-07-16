@@ -1,7 +1,9 @@
 import { router, usePathname } from "expo-router";
 import {
   CalendarClock,
+  ClipboardList,
   FolderPlus,
+  GitPullRequest,
   History,
   Home,
   Plus,
@@ -58,11 +60,13 @@ import { MobilePanelOverlay } from "@/mobile-panels/presentation";
 import {
   buildOpenProjectRoute,
   buildNewWorkspaceRoute,
+  buildPrsRoute,
   buildSchedulesRoute,
   buildSessionsRoute,
   buildSettingsAddHostRoute,
   buildSettingsHostSectionRoute,
   buildSettingsRoute,
+  buildTasksRoute,
 } from "@/utils/host-routes";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
@@ -104,6 +108,8 @@ interface SidebarLabels {
   searchHosts: string;
   sessions: string;
   schedules: string;
+  tasks: string;
+  prs: string;
   closeSidebar: string;
 }
 
@@ -113,6 +119,8 @@ interface MobileSidebarProps extends SidebarSharedProps {
   closeSidebar: () => void;
   handleViewMoreNavigate: () => void;
   handleViewSchedulesNavigate: () => void;
+  handleViewTasksNavigate: () => void;
+  handleViewPrsNavigate: () => void;
 }
 
 interface DesktopSidebarProps extends SidebarSharedProps {
@@ -120,6 +128,8 @@ interface DesktopSidebarProps extends SidebarSharedProps {
   active: boolean;
   handleViewMore: () => void;
   handleViewSchedules: () => void;
+  handleViewTasks: () => void;
+  handleViewPrs: () => void;
 }
 
 export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boolean }) {
@@ -216,6 +226,14 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     router.push(buildSchedulesRoute());
   }, []);
 
+  const handleViewTasksNavigate = useCallback(() => {
+    router.push(buildTasksRoute());
+  }, []);
+
+  const handleViewPrsNavigate = useCallback(() => {
+    router.push(buildPrsRoute());
+  }, []);
+
   const newWorkspaceKeys = useShortcutKeys("new-workspace");
   const labels = useMemo(
     (): SidebarLabels => ({
@@ -227,6 +245,8 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
       searchHosts: t("sidebar.host.searchPlaceholder"),
       sessions: t("sidebar.sections.sessions"),
       schedules: t("sidebar.sections.schedules"),
+      tasks: t("sidebar.sections.tasks"),
+      prs: t("sidebar.sections.prs"),
       closeSidebar: t("sidebar.actions.closeSidebar"),
     }),
     [t],
@@ -266,6 +286,8 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
           handleOpenHostSettings={handleOpenHostSettingsMobile}
           handleViewMoreNavigate={handleViewMoreNavigate}
           handleViewSchedulesNavigate={handleViewSchedulesNavigate}
+          handleViewTasksNavigate={handleViewTasksNavigate}
+          handleViewPrsNavigate={handleViewPrsNavigate}
         />
       </RetainedPanelActivity>
     );
@@ -284,6 +306,8 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
         handleOpenHostSettings={handleOpenHostSettingsDesktop}
         handleViewMore={handleViewMoreNavigate}
         handleViewSchedules={handleViewSchedulesNavigate}
+        handleViewTasks={handleViewTasksNavigate}
+        handleViewPrs={handleViewPrsNavigate}
       />
     </RetainedPanelActivity>
   );
@@ -557,11 +581,15 @@ function MobileSidebar({
   closeSidebar,
   handleViewMoreNavigate,
   handleViewSchedulesNavigate,
+  handleViewTasksNavigate,
+  handleViewPrsNavigate,
 }: MobileSidebarProps) {
   const pathname = usePathname();
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
   const isSessionsActive = pathname.includes("/sessions");
   const isSchedulesActive = pathname.includes("/schedules");
+  const isTasksActive = pathname.includes("/tasks");
+  const isPrsActive = pathname.includes("/prs");
   const { gesture: closeGesture, gestureRef: closeGestureRef } = useCloseAgentListGesture();
 
   const handleViewMore = useCallback(() => {
@@ -573,6 +601,16 @@ function MobileSidebar({
     closeSidebar();
     handleViewSchedulesNavigate();
   }, [closeSidebar, handleViewSchedulesNavigate]);
+
+  const handleViewTasks = useCallback(() => {
+    closeSidebar();
+    handleViewTasksNavigate();
+  }, [closeSidebar, handleViewTasksNavigate]);
+
+  const handleViewPrs = useCallback(() => {
+    closeSidebar();
+    handleViewPrsNavigate();
+  }, [closeSidebar, handleViewPrsNavigate]);
 
   const handleWorkspacePress = useCallback(() => {
     closeSidebar();
@@ -617,6 +655,22 @@ function MobileSidebar({
             onPress={handleViewSchedules}
             isActive={isSchedulesActive}
             testID="sidebar-schedules"
+            variant="compact"
+          />
+          <SidebarHeaderRow
+            icon={ClipboardList}
+            label={labels.tasks}
+            onPress={handleViewTasks}
+            isActive={isTasksActive}
+            testID="sidebar-tasks"
+            variant="compact"
+          />
+          <SidebarHeaderRow
+            icon={GitPullRequest}
+            label={labels.prs}
+            onPress={handleViewPrs}
+            isActive={isPrsActive}
+            testID="sidebar-prs"
             variant="compact"
           />
         </View>
@@ -702,12 +756,16 @@ function DesktopSidebar({
   active,
   handleViewMore,
   handleViewSchedules,
+  handleViewTasks,
+  handleViewPrs,
 }: DesktopSidebarProps) {
   const ownsTopLeft = useOwnsWindowChromeCorner("top-left");
   const pathname = usePathname();
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
   const isSessionsActive = pathname.includes("/sessions");
   const isSchedulesActive = pathname.includes("/schedules");
+  const isTasksActive = pathname.includes("/tasks");
+  const isPrsActive = pathname.includes("/prs");
   const sidebarWidth = usePanelStore((state) => state.sidebarWidth);
   const setSidebarWidth = usePanelStore((state) => state.setSidebarWidth);
   const { width: viewportWidth } = useWindowDimensions();
@@ -807,6 +865,22 @@ function DesktopSidebar({
               onPress={handleViewSchedules}
               isActive={isSchedulesActive}
               testID="sidebar-schedules"
+              variant="compact"
+            />
+            <SidebarHeaderRow
+              icon={ClipboardList}
+              label={labels.tasks}
+              onPress={handleViewTasks}
+              isActive={isTasksActive}
+              testID="sidebar-tasks"
+              variant="compact"
+            />
+            <SidebarHeaderRow
+              icon={GitPullRequest}
+              label={labels.prs}
+              onPress={handleViewPrs}
+              isActive={isPrsActive}
+              testID="sidebar-prs"
               variant="compact"
             />
           </View>
