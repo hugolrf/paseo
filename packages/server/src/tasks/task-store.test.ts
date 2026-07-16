@@ -840,6 +840,155 @@ describe("getClosed", () => {
   });
 });
 
+describe("repos", () => {
+  it("creates a task with no repos by default", async () => {
+    const task = await store.create("Task");
+
+    expect(task.repos).toEqual([]);
+  });
+
+  it("creates a task linked to multiple repos", async () => {
+    const task = await store.create("Cross-repo task", {
+      repos: ["acme/backend", "acme/frontend"],
+    });
+
+    expect(task.repos).toEqual(["acme/backend", "acme/frontend"]);
+  });
+
+  it("adds a repo link", async () => {
+    const task = await store.create("Task");
+
+    await store.addRepo(task.id, "acme/backend");
+
+    const updated = await store.get(task.id);
+    expect(updated?.repos).toEqual(["acme/backend"]);
+  });
+
+  it("does not duplicate repo links", async () => {
+    const task = await store.create("Task");
+
+    await store.addRepo(task.id, "acme/backend");
+    await store.addRepo(task.id, "acme/backend");
+
+    const updated = await store.get(task.id);
+    expect(updated?.repos).toEqual(["acme/backend"]);
+  });
+
+  it("removes a repo link", async () => {
+    const task = await store.create("Task", {
+      repos: ["acme/backend", "acme/frontend"],
+    });
+
+    await store.removeRepo(task.id, "acme/backend");
+
+    const updated = await store.get(task.id);
+    expect(updated?.repos).toEqual(["acme/frontend"]);
+  });
+
+  it("throws when adding repo to non-existent task", async () => {
+    await expect(store.addRepo("nonexistent", "acme/backend")).rejects.toThrow("Task not found");
+  });
+
+  it("supports local paths as repo refs", async () => {
+    const task = await store.create("Task", {
+      repos: ["/Users/dev/projects/backend"],
+    });
+
+    const updated = await store.get(task.id);
+    expect(updated?.repos).toEqual(["/Users/dev/projects/backend"]);
+  });
+
+  it("getByRepo returns only tasks linked to the repo", async () => {
+    const backendTask = await store.create("Backend task", {
+      repos: ["acme/backend"],
+    });
+    const crossTask = await store.create("Cross task", {
+      repos: ["acme/backend", "acme/frontend"],
+    });
+    await store.create("Unrelated task");
+
+    const backendTasks = await store.getByRepo("acme/backend");
+    expect(backendTasks.map((t) => t.id).sort()).toEqual([backendTask.id, crossTask.id].sort());
+
+    const frontendTasks = await store.getByRepo("acme/frontend");
+    expect(frontendTasks.map((t) => t.id)).toEqual([crossTask.id]);
+  });
+
+  it("persists repos across store instances", async () => {
+    const task = await store.create("Task", {
+      repos: ["acme/backend", "/Users/dev/projects/frontend"],
+    });
+
+    const store2 = new FileTaskStore(tempDir);
+    const retrieved = await store2.get(task.id);
+
+    expect(retrieved?.repos).toEqual(["acme/backend", "/Users/dev/projects/frontend"]);
+  });
+});
+
+describe("agent links", () => {
+  it("creates a task with no agents by default", async () => {
+    const task = await store.create("Task");
+
+    expect(task.agentIds).toEqual([]);
+  });
+
+  it("links agents to a task", async () => {
+    const task = await store.create("Task");
+
+    await store.linkAgent(task.id, "agent-1");
+    await store.linkAgent(task.id, "agent-2");
+
+    const updated = await store.get(task.id);
+    expect(updated?.agentIds).toEqual(["agent-1", "agent-2"]);
+  });
+
+  it("does not duplicate agent links", async () => {
+    const task = await store.create("Task");
+
+    await store.linkAgent(task.id, "agent-1");
+    await store.linkAgent(task.id, "agent-1");
+
+    const updated = await store.get(task.id);
+    expect(updated?.agentIds).toEqual(["agent-1"]);
+  });
+
+  it("unlinks an agent", async () => {
+    const task = await store.create("Task", { agentIds: ["agent-1", "agent-2"] });
+
+    await store.unlinkAgent(task.id, "agent-1");
+
+    const updated = await store.get(task.id);
+    expect(updated?.agentIds).toEqual(["agent-2"]);
+  });
+
+  it("throws when linking agent to non-existent task", async () => {
+    await expect(store.linkAgent("nonexistent", "agent-1")).rejects.toThrow("Task not found");
+  });
+
+  it("persists agent links across store instances", async () => {
+    const task = await store.create("Task", { agentIds: ["agent-1"] });
+
+    const store2 = new FileTaskStore(tempDir);
+    const retrieved = await store2.get(task.id);
+
+    expect(retrieved?.agentIds).toEqual(["agent-1"]);
+  });
+
+  it("parses task files without repos or agentIds frontmatter", async () => {
+    // Simulates pre-existing task files written before these fields existed
+    const task = await store.create("Legacy-shaped task");
+
+    const store2 = new FileTaskStore(tempDir);
+    const retrieved = await store2.get(task.id);
+
+    expect(retrieved?.repos).toEqual([]);
+    expect(retrieved?.agentIds).toEqual([]);
+    expect(retrieved?.raw).not.toContain("repos:");
+    expect(retrieved?.raw).not.toContain("agentIds:");
+  });
+});
+
 describe("getDepTree", () => {
   it("returns empty for task with no deps", async () => {
     const task = await store.create("Leaf task");

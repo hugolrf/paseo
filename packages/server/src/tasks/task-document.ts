@@ -24,6 +24,14 @@ function serializeTask(task: Task): string {
     frontmatterLines.push(`priority: ${task.priority}`);
   }
 
+  if (task.repos.length > 0) {
+    frontmatterLines.push(`repos: [${task.repos.join(", ")}]`);
+  }
+
+  if (task.agentIds.length > 0) {
+    frontmatterLines.push(`agentIds: [${task.agentIds.join(", ")}]`);
+  }
+
   frontmatterLines.push("---");
 
   const frontmatter = frontmatterLines.join("\n");
@@ -64,15 +72,17 @@ function parseTask(content: string): Task {
     return match ? match[1] : "";
   };
 
-  const depsStr = getValue("deps");
-  const depsMatch = depsStr.match(/\[(.*)\]/);
-  const deps =
-    depsMatch && depsMatch[1].trim()
-      ? depsMatch[1]
+  const parseList = (key: string): string[] => {
+    const listMatch = getValue(key).match(/\[(.*)\]/);
+    return listMatch && listMatch[1].trim()
+      ? listMatch[1]
           .split(",")
-          .map((d) => d.trim())
+          .map((item) => item.trim())
           .filter(Boolean)
       : [];
+  };
+
+  const deps = parseList("deps");
 
   const notes: Task["notes"] = [];
   const notesSection = fileBody.match(/## Notes\n([\s\S]*?)$/);
@@ -121,6 +131,8 @@ function parseTask(content: string): Task {
     created: getValue("created") || new Date().toISOString(),
     assignee: assignee || undefined,
     priority,
+    repos: parseList("repos"),
+    agentIds: parseList("agentIds"),
     raw: content,
   };
 }

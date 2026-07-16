@@ -144,6 +144,7 @@ import {
   createGitMetadataGenerator,
 } from "./session/checkout/git-metadata-generator.js";
 import { ChatScheduleLoopSession } from "./session/chat/chat-schedule-loop-session.js";
+import { TasksSession } from "./session/tasks/tasks-session.js";
 import { ProviderCatalogSession } from "./session/provider/provider-catalog-session.js";
 import { WorkspaceFilesSession } from "./session/files/workspace-files-session.js";
 import { AgentConfigSession } from "./session/agent-config/agent-config-session.js";
@@ -610,6 +611,7 @@ export class Session {
   private readonly voiceSession: VoiceSession;
   private readonly checkoutSession: CheckoutSession;
   private readonly chatScheduleLoopSession: ChatScheduleLoopSession;
+  private readonly tasksSession: TasksSession;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly agentConfigSession: AgentConfigSession;
@@ -781,6 +783,13 @@ export class Session {
       scheduleService,
       loopService,
       clientId: this.clientId,
+      logger: this.sessionLogger,
+    });
+    this.tasksSession = new TasksSession({
+      host: {
+        emit: (msg) => this.emit(msg),
+      },
+      paseoHome: this.paseoHome,
       logger: this.sessionLogger,
     });
     this.providerCatalogSession = new ProviderCatalogSession({
@@ -1443,6 +1452,7 @@ export class Session {
       this.dispatchProviderMessage(msg) ??
       this.dispatchTerminalMessage(msg) ??
       this.dispatchChatScheduleLoopMessage(msg) ??
+      this.dispatchTasksMessage(msg) ??
       this.dispatchMiscMessage(msg);
     if (promise) await promise;
   }
@@ -1659,6 +1669,12 @@ export class Session {
         return this.checkoutSession.handleCheckoutGithubSetAutoMergeRequest(msg);
       case "checkout.github.get_check_details.request":
         return this.checkoutSession.handleCheckoutGithubGetCheckDetailsRequest(msg);
+      case "checkout.github.list_pull_requests.request":
+        return this.checkoutSession.handleCheckoutGithubListPullRequestsRequest(msg);
+      case "checkout.github.get_pr_diff.request":
+        return this.checkoutSession.handleCheckoutGithubGetPrDiffRequest(msg);
+      case "checkout.github.review_pr.request":
+        return this.checkoutSession.handleCheckoutGithubReviewPrRequest(msg);
       case "checkout_pr_status_request":
         return this.checkoutSession.handleCheckoutPrStatusRequest(msg);
       case "pull_request_timeline_request":
@@ -1767,6 +1783,21 @@ export class Session {
         return this.providerCatalogSession.handleProviderDiagnosticRequest(msg);
       case "provider.usage.list.request":
         return this.providerCatalogSession.handleProviderUsageListRequest(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private dispatchTasksMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "tasks.core.create.request":
+        return this.tasksSession.handleTasksCoreCreateRequest(msg);
+      case "tasks.core.list.request":
+        return this.tasksSession.handleTasksCoreListRequest(msg);
+      case "tasks.core.update.request":
+        return this.tasksSession.handleTasksCoreUpdateRequest(msg);
+      case "tasks.core.delete.request":
+        return this.tasksSession.handleTasksCoreDeleteRequest(msg);
       default:
         return undefined;
     }

@@ -836,6 +836,24 @@ export interface CreateGitHubPullRequestOptions {
   body?: string;
 }
 
+export type GetGitHubPullRequestDiffOptions = {
+  cwd: string;
+  number: number;
+} & GitHubReadOptions;
+
+export type GitHubPullRequestReviewEvent = "approve" | "request_changes" | "comment";
+
+export interface ReviewGitHubPullRequestOptions {
+  cwd: string;
+  prNumber: number;
+  event: GitHubPullRequestReviewEvent;
+  body?: string;
+}
+
+export interface GitHubPullRequestReviewResult {
+  success: true;
+}
+
 export interface GitHubService {
   listPullRequests(options: ListGitHubPullRequestsOptions): Promise<GitHubPullRequestSummary[]>;
   listIssues(options: ListGitHubIssuesOptions): Promise<GitHubIssueSummary[]>;
@@ -851,6 +869,7 @@ export interface GitHubService {
       headRepositoryOwner?: string;
     } & GitHubReadOptions,
   ): Promise<GitHubCurrentPullRequestStatus | null>;
+  getPullRequestDiff(options: GetGitHubPullRequestDiffOptions): Promise<string>;
   getPullRequestTimeline(
     options: GetGitHubPullRequestTimelineOptions,
   ): Promise<GitHubPullRequestTimeline>;
@@ -867,6 +886,9 @@ export interface GitHubService {
   disablePullRequestAutoMerge(
     options: DisableGitHubPullRequestAutoMergeOptions,
   ): Promise<GitHubPullRequestAutoMergeResult>;
+  reviewPullRequest(
+    options: ReviewGitHubPullRequestOptions,
+  ): Promise<GitHubPullRequestReviewResult>;
   isAuthenticated(options: { cwd: string } & GitHubReadOptions): Promise<boolean>;
   retainCurrentPullRequestStatusPoll?(options: {
     cwd: string;
@@ -1156,6 +1178,18 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
             { cwd: input.cwd },
           );
           return parsePullRequestSummaries(stdout);
+        },
+      });
+    },
+
+    getPullRequestDiff(input) {
+      return cached({
+        cwd: input.cwd,
+        method: "getPullRequestDiff",
+        args: { number: input.number },
+        readOptions: input,
+        load: async () => {
+          return run(["pr", "diff", String(input.number)], { cwd: input.cwd });
         },
       });
     },
@@ -1578,6 +1612,28 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     async disablePullRequestAutoMerge(input) {
       assertPullRequestAutoMergeDisableReady(input);
       await run(["pr", "merge", String(input.prNumber), "--disable-auto"], {
+        cwd: input.cwd,
+        envOverlay: { GH_PROMPT_DISABLED: "1" },
+      });
+      return { success: true };
+    },
+
+    async reviewPullRequest(input) {
+      const body = input.body?.trim() ?? "";
+      if (input.event !== "approve" && body.length === 0) {
+        throw new Error(`A review body is required for the "${input.event}" review event`);
+      }
+
+      const eventFlags: Record<GitHubPullRequestReviewEvent, string> = {
+        approve: "--approve",
+        request_changes: "--request-changes",
+        comment: "--comment",
+      };
+      const args = ["pr", "review", String(input.prNumber), eventFlags[input.event]];
+      if (body.length > 0) {
+        args.push("--body", body);
+      }
+      await run(args, {
         cwd: input.cwd,
         envOverlay: { GH_PROMPT_DISABLED: "1" },
       });

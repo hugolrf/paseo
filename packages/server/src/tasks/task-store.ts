@@ -142,6 +142,11 @@ export class FileTaskStore implements TaskStore {
     return graph.candidates.filter((task) => isBlockedTask(graph, task));
   }
 
+  async getByRepo(repo: string): Promise<Task[]> {
+    const allTasks = await this.list();
+    return allTasks.filter((task) => task.repos.includes(repo)).sort(sortByPriorityThenCreated);
+  }
+
   async getClosed(scopeId?: string): Promise<Task[]> {
     const { candidates } = await loadScopedTaskGraph(this, scopeId);
 
@@ -171,6 +176,8 @@ export class FileTaskStore implements TaskStore {
       created: new Date().toISOString(),
       assignee: opts?.assignee,
       priority: opts?.priority,
+      repos: opts?.repos ?? [],
+      agentIds: opts?.agentIds ?? [],
       raw: "", // will be set after serialization
     };
 
@@ -263,6 +270,50 @@ export class FileTaskStore implements TaskStore {
     }
 
     return ancestors;
+  }
+
+  async addRepo(id: string, repo: string): Promise<void> {
+    const task = await this.get(id);
+    if (!task) {
+      throw new Error(`Task not found: ${id}`);
+    }
+
+    if (!task.repos.includes(repo)) {
+      task.repos.push(repo);
+      await this.writeTask(task);
+    }
+  }
+
+  async removeRepo(id: string, repo: string): Promise<void> {
+    const task = await this.get(id);
+    if (!task) {
+      throw new Error(`Task not found: ${id}`);
+    }
+
+    task.repos = task.repos.filter((r) => r !== repo);
+    await this.writeTask(task);
+  }
+
+  async linkAgent(id: string, agentId: string): Promise<void> {
+    const task = await this.get(id);
+    if (!task) {
+      throw new Error(`Task not found: ${id}`);
+    }
+
+    if (!task.agentIds.includes(agentId)) {
+      task.agentIds.push(agentId);
+      await this.writeTask(task);
+    }
+  }
+
+  async unlinkAgent(id: string, agentId: string): Promise<void> {
+    const task = await this.get(id);
+    if (!task) {
+      throw new Error(`Task not found: ${id}`);
+    }
+
+    task.agentIds = task.agentIds.filter((a) => a !== agentId);
+    await this.writeTask(task);
   }
 
   async addNote(id: string, content: string): Promise<void> {

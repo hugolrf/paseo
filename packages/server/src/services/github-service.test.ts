@@ -3092,4 +3092,100 @@ describe("GitHubService", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
+
+  it("fetches a pull request diff with gh pr diff", async () => {
+    const runner = createRunner(["diff --git a/file.ts b/file.ts\n+added line\n"]);
+    const service = createGitHubService({
+      runner: runner.runner,
+    });
+
+    await expect(
+      service.getPullRequestDiff({
+        cwd: "/tmp/repo",
+        number: 42,
+        force: true,
+        reason: "test",
+      }),
+    ).resolves.toContain("+added line");
+
+    expect(runner.calls).toEqual([
+      {
+        args: ["pr", "diff", "42"],
+        cwd: "/tmp/repo",
+        envOverlay: undefined,
+      },
+    ]);
+  });
+
+  it.each([
+    ["approve", ["pr", "review", "42", "--approve", "--body", "Looks good"]],
+    ["request_changes", ["pr", "review", "42", "--request-changes", "--body", "Looks good"]],
+    ["comment", ["pr", "review", "42", "--comment", "--body", "Looks good"]],
+  ] as const)("reviews pull requests with gh using %s", async (event, expectedArgs) => {
+    const runner = createRunner([""]);
+    const service = createGitHubService({
+      runner: runner.runner,
+    });
+
+    await expect(
+      service.reviewPullRequest({
+        cwd: "/tmp/repo",
+        prNumber: 42,
+        event,
+        body: "Looks good",
+      }),
+    ).resolves.toEqual({ success: true });
+
+    expect(runner.calls).toEqual([
+      {
+        args: expectedArgs,
+        cwd: "/tmp/repo",
+        envOverlay: { GH_PROMPT_DISABLED: "1" },
+      },
+    ]);
+  });
+
+  it("approves without a body", async () => {
+    const runner = createRunner([""]);
+    const service = createGitHubService({
+      runner: runner.runner,
+    });
+
+    await expect(
+      service.reviewPullRequest({
+        cwd: "/tmp/repo",
+        prNumber: 42,
+        event: "approve",
+      }),
+    ).resolves.toEqual({ success: true });
+
+    expect(runner.calls).toEqual([
+      {
+        args: ["pr", "review", "42", "--approve"],
+        cwd: "/tmp/repo",
+        envOverlay: { GH_PROMPT_DISABLED: "1" },
+      },
+    ]);
+  });
+
+  it.each(["request_changes", "comment"] as const)(
+    "rejects %s reviews without a body",
+    async (event) => {
+      const runner = createRunner([""]);
+      const service = createGitHubService({
+        runner: runner.runner,
+      });
+
+      await expect(
+        service.reviewPullRequest({
+          cwd: "/tmp/repo",
+          prNumber: 42,
+          event,
+          body: "   ",
+        }),
+      ).rejects.toThrow("review body is required");
+
+      expect(runner.calls).toEqual([]);
+    },
+  );
 });

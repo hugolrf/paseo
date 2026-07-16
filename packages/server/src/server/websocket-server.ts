@@ -1266,6 +1266,10 @@ export class VoiceAssistantWebSocketServer {
         commitsList: true,
         // COMPAT(providerRemoval): added in v0.1.105, drop the gate when floor >= v0.1.105.
         providerRemoval: true,
+        // COMPAT(tasksCore): added in v0.1.110 (hugolrf fork), drop the gate when floor >= v0.1.110.
+        tasksCore: true,
+        // COMPAT(checkoutGithubPrReview): added in v0.1.110 (hugolrf fork), drop the gate when floor >= v0.1.110.
+        checkoutGithubPrReview: true,
       },
     };
   }

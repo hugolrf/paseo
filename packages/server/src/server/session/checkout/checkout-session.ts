@@ -113,6 +113,9 @@ export interface CheckoutSessionOptions {
  */
 export class CheckoutSession {
   private static readonly PASEO_STASH_PREFIX = "paseo-auto-stash:";
+  // PR diffs can be arbitrarily large; cap what goes over the wire to keep
+  // mobile clients responsive. The response flags truncation explicitly.
+  private static readonly MAX_PR_DIFF_CHARS = 256 * 1024;
 
   private readonly host: CheckoutSessionHost;
   private readonly gitMutation: Pick<
@@ -944,6 +947,118 @@ export class CheckoutSession {
         payload: {
           cwd,
           enabled: msg.enabled,
+          success: false,
+          error: toCheckoutError(error),
+          requestId,
+        },
+      });
+    }
+  }
+
+  async handleCheckoutGithubListPullRequestsRequest(
+    msg: Extract<SessionInboundMessage, { type: "checkout.github.list_pull_requests.request" }>,
+  ): Promise<void> {
+    const { cwd, requestId } = msg;
+
+    try {
+      const pullRequests = await this.github.listPullRequests({
+        cwd,
+        query: msg.query,
+        limit: msg.limit,
+        force: true,
+        reason: "pr-review-list",
+      });
+      this.host.emit({
+        type: "checkout.github.list_pull_requests.response",
+        payload: {
+          cwd,
+          pullRequests,
+          error: null,
+          requestId,
+        },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.github.list_pull_requests.response",
+        payload: {
+          cwd,
+          pullRequests: [],
+          error: toCheckoutError(error),
+          requestId,
+        },
+      });
+    }
+  }
+
+  async handleCheckoutGithubGetPrDiffRequest(
+    msg: Extract<SessionInboundMessage, { type: "checkout.github.get_pr_diff.request" }>,
+  ): Promise<void> {
+    const { cwd, prNumber, requestId } = msg;
+
+    try {
+      const diff = await this.github.getPullRequestDiff({
+        cwd,
+        number: prNumber,
+        force: true,
+        reason: "pr-review-diff",
+      });
+      const truncated = diff.length > CheckoutSession.MAX_PR_DIFF_CHARS;
+      this.host.emit({
+        type: "checkout.github.get_pr_diff.response",
+        payload: {
+          cwd,
+          prNumber,
+          diff: truncated ? diff.slice(0, CheckoutSession.MAX_PR_DIFF_CHARS) : diff,
+          truncated,
+          error: null,
+          requestId,
+        },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.github.get_pr_diff.response",
+        payload: {
+          cwd,
+          prNumber,
+          diff: null,
+          truncated: false,
+          error: toCheckoutError(error),
+          requestId,
+        },
+      });
+    }
+  }
+
+  async handleCheckoutGithubReviewPrRequest(
+    msg: Extract<SessionInboundMessage, { type: "checkout.github.review_pr.request" }>,
+  ): Promise<void> {
+    const { cwd, prNumber, event, requestId } = msg;
+
+    try {
+      await this.github.reviewPullRequest({
+        cwd,
+        prNumber,
+        event,
+        body: msg.body,
+      });
+      this.host.emit({
+        type: "checkout.github.review_pr.response",
+        payload: {
+          cwd,
+          prNumber,
+          event,
+          success: true,
+          error: null,
+          requestId,
+        },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.github.review_pr.response",
+        payload: {
+          cwd,
+          prNumber,
+          event,
           success: false,
           error: toCheckoutError(error),
           requestId,

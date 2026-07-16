@@ -22,6 +22,16 @@ import {
   ChatWaitResponseSchema,
 } from "./chat/rpc-schemas.js";
 import {
+  TasksCoreCreateRequestSchema,
+  TasksCoreListRequestSchema,
+  TasksCoreUpdateRequestSchema,
+  TasksCoreDeleteRequestSchema,
+  TasksCoreCreateResponseSchema,
+  TasksCoreListResponseSchema,
+  TasksCoreUpdateResponseSchema,
+  TasksCoreDeleteResponseSchema,
+} from "./tasks/rpc-schemas.js";
+import {
   ScheduleCreateRequestSchema,
   ScheduleListRequestSchema,
   ScheduleInspectRequestSchema,
@@ -1687,6 +1697,32 @@ export const CheckoutGithubGetCheckDetailsRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const CheckoutGithubListPullRequestsRequestSchema = z.object({
+  type: z.literal("checkout.github.list_pull_requests.request"),
+  cwd: z.string(),
+  query: z.string().optional(),
+  limit: z.number().int().positive().max(100).optional(),
+  requestId: z.string(),
+});
+
+export const CheckoutGithubGetPrDiffRequestSchema = z.object({
+  type: z.literal("checkout.github.get_pr_diff.request"),
+  cwd: z.string(),
+  prNumber: z.number().int().positive(),
+  requestId: z.string(),
+});
+
+export const GithubPrReviewEventSchema = z.enum(["approve", "request_changes", "comment"]);
+
+export const CheckoutGithubReviewPrRequestSchema = z.object({
+  type: z.literal("checkout.github.review_pr.request"),
+  cwd: z.string(),
+  prNumber: z.number().int().positive(),
+  event: GithubPrReviewEventSchema,
+  body: z.string().optional(),
+  requestId: z.string(),
+});
+
 export const CheckoutPrStatusRequestSchema = z.object({
   type: z.literal("checkout_pr_status_request"),
   cwd: z.string(),
@@ -2277,6 +2313,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   CheckoutPrCreateRequestSchema,
   CheckoutPrMergeRequestSchema,
   CheckoutGithubSetAutoMergeRequestSchema,
+  CheckoutGithubListPullRequestsRequestSchema,
+  CheckoutGithubGetPrDiffRequestSchema,
+  CheckoutGithubReviewPrRequestSchema,
   CheckoutCommitsListRequestSchema,
   CheckoutCommitFileDiffRequestSchema,
   CheckoutGithubGetCheckDetailsRequestSchema,
@@ -2346,6 +2385,10 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   LoopInspectRequestSchema,
   LoopLogsRequestSchema,
   LoopStopRequestSchema,
+  TasksCoreCreateRequestSchema,
+  TasksCoreListRequestSchema,
+  TasksCoreUpdateRequestSchema,
+  TasksCoreDeleteRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -2558,6 +2601,10 @@ export const ServerInfoStatusPayloadSchema = z
         projectCreateDirectory: z.boolean().optional(),
         // COMPAT(commitsList): added in v0.1.110, remove gate after 2027-01-16.
         commitsList: z.boolean().optional(),
+        // COMPAT(tasksCore): added in v0.1.110 (hugolrf fork), drop the gate when floor >= v0.1.110.
+        tasksCore: z.boolean().optional(),
+        // COMPAT(checkoutGithubPrReview): added in v0.1.110 (hugolrf fork), drop the gate when floor >= v0.1.110.
+        checkoutGithubPrReview: z.boolean().optional(),
         // COMPAT(providerRemoval): added in v0.1.105, drop the gate when floor >= v0.1.105.
         providerRemoval: z.boolean().optional(),
       })
@@ -3906,6 +3953,53 @@ export const CheckoutGithubGetCheckDetailsResponseSchema = z.object({
   }),
 });
 
+export const CheckoutGithubPullRequestSummarySchema = z.object({
+  number: z.number(),
+  title: z.string(),
+  url: z.string(),
+  state: z.string(),
+  body: z.string().nullable(),
+  baseRefName: z.string(),
+  headRefName: z.string(),
+  labels: z.array(z.string()),
+  updatedAt: z.string(),
+});
+
+export const CheckoutGithubListPullRequestsResponseSchema = z.object({
+  type: z.literal("checkout.github.list_pull_requests.response"),
+  payload: z.object({
+    cwd: z.string(),
+    pullRequests: z.array(CheckoutGithubPullRequestSummarySchema),
+    error: CheckoutErrorSchema.nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const CheckoutGithubGetPrDiffResponseSchema = z.object({
+  type: z.literal("checkout.github.get_pr_diff.response"),
+  payload: z.object({
+    cwd: z.string(),
+    prNumber: z.number(),
+    // null when the diff could not be fetched (see error).
+    diff: z.string().nullable(),
+    truncated: z.boolean(),
+    error: CheckoutErrorSchema.nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const CheckoutGithubReviewPrResponseSchema = z.object({
+  type: z.literal("checkout.github.review_pr.response"),
+  payload: z.object({
+    cwd: z.string(),
+    prNumber: z.number(),
+    event: GithubPrReviewEventSchema,
+    success: z.boolean(),
+    error: CheckoutErrorSchema.nullable(),
+    requestId: z.string(),
+  }),
+});
+
 export const CheckoutPrStatusResponseSchema = z.object({
   type: z.literal("checkout_pr_status_response"),
   payload: CheckoutPrStatusPayloadSchema,
@@ -4631,6 +4725,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   CheckoutPrCreateResponseSchema,
   CheckoutPrMergeResponseSchema,
   CheckoutGithubSetAutoMergeResponseSchema,
+  CheckoutGithubListPullRequestsResponseSchema,
+  CheckoutGithubGetPrDiffResponseSchema,
+  CheckoutGithubReviewPrResponseSchema,
   CheckoutCommitsListResponseSchema,
   CheckoutCommitFileDiffResponseSchema,
   CheckoutGithubGetCheckDetailsResponseSchema,
@@ -4692,6 +4789,10 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   LoopInspectResponseSchema,
   LoopLogsResponseSchema,
   LoopStopResponseSchema,
+  TasksCoreCreateResponseSchema,
+  TasksCoreListResponseSchema,
+  TasksCoreUpdateResponseSchema,
+  TasksCoreDeleteResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
 ]);

@@ -21,6 +21,8 @@ export interface Task {
   created: string; // ISO date
   assignee?: AgentType; // optional agent override
   priority?: number; // lower number = higher priority (1 is highest), tasks with priority sort before those without
+  repos: string[]; // repository refs this task spans (workspace cwd, "owner/repo", or remote URL); a task may target zero, one, or many repos
+  agentIds: string[]; // Paseo agent (work session) ids attached to this task
   raw: string; // the raw markdown file content
 }
 
@@ -32,6 +34,8 @@ export interface CreateTaskOptions {
   acceptanceCriteria?: string[];
   assignee?: AgentType;
   priority?: number;
+  repos?: string[];
+  agentIds?: string[];
 }
 
 export interface TaskStore {
@@ -41,9 +45,11 @@ export interface TaskStore {
   getDepTree(id: string): Promise<Task[]>; // all descendants in dep graph
   getAncestors(id: string): Promise<Task[]>; // parent chain from immediate parent to root
   getChildren(id: string): Promise<Task[]>; // direct children of a task
+  getDescendants(id: string): Promise<Task[]>; // all transitive children of a task
   getReady(scopeId?: string): Promise<Task[]>; // open + all deps done, optionally scoped
   getBlocked(scopeId?: string): Promise<Task[]>; // open/in_progress but has unresolved deps
   getClosed(scopeId?: string): Promise<Task[]>; // done tasks, optionally scoped
+  getByRepo(repo: string): Promise<Task[]>; // tasks linked to a repository ref
 
   // Mutations
   create(title: string, opts?: CreateTaskOptions): Promise<Task>;
@@ -53,6 +59,10 @@ export interface TaskStore {
   removeDep(id: string, depId: string): Promise<void>;
   setParent(id: string, parentId: string | null): Promise<void>;
   addNote(id: string, content: string): Promise<void>;
+  addRepo(id: string, repo: string): Promise<void>;
+  removeRepo(id: string, repo: string): Promise<void>;
+  linkAgent(id: string, agentId: string): Promise<void>;
+  unlinkAgent(id: string, agentId: string): Promise<void>;
 
   // Status transitions
   open(id: string): Promise<void>; // draft -> open
