@@ -1800,6 +1800,8 @@ export class Session {
         return this.tasksSession.handleTasksCoreDeleteRequest(msg);
       case "tasks.origins.get_issue.request":
         return this.tasksSession.handleTasksOriginsGetIssueRequest(msg);
+      case "tasks.sync.run.request":
+        return this.tasksSession.handleTasksSyncRunRequest(msg);
       default:
         return undefined;
     }

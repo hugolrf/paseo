@@ -8,6 +8,7 @@ import {
   type OriginsService,
 } from "../../../services/origins/origins-service.js";
 import { FileTaskStore } from "../../../tasks/task-store.js";
+import { syncTasksFromOrigins } from "../../../tasks/task-sync.js";
 import type { Task, TaskStore } from "../../../tasks/types.js";
 
 export interface TasksSessionHost {
@@ -51,6 +52,46 @@ export class TasksSession {
         readConfig: () => loadPersistedConfig(options.paseoHome, options.logger).origins,
       });
     this.logger = options.logger;
+  }
+
+  async handleTasksSyncRunRequest(
+    msg: Extract<SessionInboundMessage, { type: "tasks.sync.run.request" }>,
+  ): Promise<void> {
+    try {
+      const { issues, errors } = await this.origins.listAllMyIssues();
+      const failedProviders = new Set(errors.map((error) => error.provider));
+      const syncedProviders = this.origins
+        .configuredProviders()
+        .filter((provider) => !failedProviders.has(provider));
+      const result = await syncTasksFromOrigins({
+        store: this.store,
+        issues,
+        syncedProviders,
+      });
+      this.host.emit({
+        type: "tasks.sync.run.response",
+        payload: {
+          ...result,
+          originErrors: errors,
+          error: null,
+          requestId: msg.requestId,
+        },
+      });
+    } catch (error) {
+      this.logger.warn({ err: error }, "tasks.sync.run failed");
+      this.host.emit({
+        type: "tasks.sync.run.response",
+        payload: {
+          created: 0,
+          updated: 0,
+          closed: 0,
+          unchanged: 0,
+          originErrors: [],
+          error: getErrorMessage(error),
+          requestId: msg.requestId,
+        },
+      });
+    }
   }
 
   async handleTasksOriginsGetIssueRequest(

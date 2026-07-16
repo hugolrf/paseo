@@ -144,3 +144,27 @@ export const TasksOriginsGetIssueResponseSchema = z.object({
     requestId: z.string(),
   }),
 });
+
+export const TasksSyncRunRequestSchema = z.object({
+  type: z.literal("tasks.sync.run.request"),
+  requestId: z.string(),
+});
+
+export const TasksSyncRunResponseSchema = z.object({
+  type: z.literal("tasks.sync.run.response"),
+  payload: z.object({
+    created: z.number(),
+    updated: z.number(),
+    closed: z.number(),
+    unchanged: z.number(),
+    // Origins that failed during the sweep; successful origins still synced.
+    originErrors: z.array(
+      z.object({
+        provider: z.string(),
+        message: z.string(),
+      }),
+    ),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});

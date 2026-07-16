@@ -20,7 +20,11 @@ const GitlabIssueSchema = z.object({
   web_url: z.string().nullish(),
   updated_at: z.string().nullish(),
   labels: z.array(z.string()).optional(),
+  project_id: z.number().optional(),
+  references: z.object({ full: z.string().nullish() }).nullish(),
 });
+
+const GitlabIssueListSchema = z.array(GitlabIssueSchema);
 
 // GitLab issues only expose opened/closed; refine "opened" with the
 // conventional workflow labels (Doing, In Review, ...), when present.
@@ -64,15 +68,41 @@ export function createGitlabOrigin(
       }
 
       const issue = GitlabIssueSchema.parse(await response.json());
-      return {
-        provider: "gitlab",
-        key: `${projectPath}#${issue.iid}`,
-        title: issue.title,
-        status: normalizeGitlabStatus(issue.state, issue.labels ?? []),
-        rawStatus: issue.state,
-        url: issue.web_url ?? null,
-        updatedAt: issue.updated_at ?? null,
-      };
+      return toOriginIssue(`${projectPath}#${issue.iid}`, issue);
     },
+
+    async listMyIssues(): Promise<OriginIssue[]> {
+      const response = await fetchFn(
+        `${baseUrl}/api/v4/issues?scope=assigned_to_me&state=opened&per_page=100&with_labels_details=false`,
+        {
+          headers: {
+            "PRIVATE-TOKEN": config.token,
+            Accept: "application/json",
+          },
+        },
+      );
+      if (!response.ok) {
+        throw new OriginRequestError({ provider: "gitlab", status: response.status });
+      }
+
+      const issues = GitlabIssueListSchema.parse(await response.json());
+      return issues.map((issue) => {
+        const projectPath =
+          issue.references?.full?.replace(/#\d+$/, "") ?? String(issue.project_id ?? "");
+        return toOriginIssue(`${projectPath}#${issue.iid}`, issue);
+      });
+    },
+  };
+}
+
+function toOriginIssue(key: string, issue: z.infer<typeof GitlabIssueSchema>): OriginIssue {
+  return {
+    provider: "gitlab",
+    key,
+    title: issue.title,
+    status: normalizeGitlabStatus(issue.state, issue.labels ?? []),
+    rawStatus: issue.state,
+    url: issue.web_url ?? null,
+    updatedAt: issue.updated_at ?? null,
   };
 }

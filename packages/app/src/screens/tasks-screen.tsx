@@ -1,21 +1,28 @@
-import { useCallback, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
-import { ClipboardList, Plus, RefreshCw } from "lucide-react-native";
+import { ClipboardList, FolderGit2, RefreshCw } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { MenuHeader } from "@/components/headers/menu-header";
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useTasks, type AggregatedTask, type TaskHostError } from "@/hooks/use-tasks";
+import { useHostFeatureMap } from "@/runtime/host-features";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 import { toErrorMessage } from "@/utils/error-messages";
 
 const EMPTY_TASKS: AggregatedTask[] = [];
 
+type SyncState =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | { kind: "done"; summary: string; originErrors: string[] }
+  | { kind: "error"; message: string };
+
 type OriginLookupState =
   | { kind: "loading" }
-  | { kind: "loaded"; status: string; rawStatus: string; title: string; url: string | null }
+  | { kind: "loaded"; status: string; rawStatus: string; title: string }
   | { kind: "error"; message: string };
 
 export function TasksScreen(): ReactElement {
@@ -33,106 +40,77 @@ function TasksScreenContent(): ReactElement {
   const tasks = loadState.status === "loaded" ? loadState.data : EMPTY_TASKS;
   const hosts = useHosts();
   const runtime = getHostRuntimeStore();
-
-  const [showCreate, setShowCreate] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newRepos, setNewRepos] = useState("");
-  const [newOrigin, setNewOrigin] = useState("");
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [mutatingTaskId, setMutatingTaskId] = useState<string | null>(null);
-  const [originLookups, setOriginLookups] = useState<Map<string, OriginLookupState>>(new Map());
-
-  const supportedHosts = useMemo(
-    () => hosts.filter((host) => runtime.getClient(host.serverId)),
-    [hosts, runtime],
+  const allServerIds = useMemo(() => hosts.map((host) => host.serverId), [hosts]);
+  // COMPAT(tasksSync): added in v0.1.110 (hugolrf fork), drop the gate when floor >= v0.1.110.
+  const syncFeatureMap = useHostFeatureMap(allServerIds, "tasksSync");
+  const syncHosts = useMemo(
+    () => hosts.filter((host) => syncFeatureMap.get(host.serverId) === true),
+    [hosts, syncFeatureMap],
   );
 
-  const openCreate = useCallback(() => setShowCreate(true), []);
-  const closeCreate = useCallback(() => setShowCreate(false), []);
-  const toggleCreate = useCallback(() => setShowCreate((current) => !current), []);
+  const [syncState, setSyncState] = useState<SyncState>({ kind: "idle" });
+  const [originLookups, setOriginLookups] = useState<Map<string, OriginLookupState>>(new Map());
 
-  const setOriginLookup = useCallback((key: string, state: OriginLookupState | null) => {
+  const setOriginLookup = useCallback((key: string, state: OriginLookupState) => {
     setOriginLookups((current) => {
       const next = new Map(current);
-      if (state === null) {
-        next.delete(key);
-      } else {
-        next.set(key, state);
-      }
+      next.set(key, state);
       return next;
     });
   }, []);
 
-  const handleCreate = useCallback(async () => {
-    const title = newTitle.trim();
-    if (!title) {
-      setCreateError("Title is required");
-      return;
-    }
-    const target = supportedHosts[0];
-    const client = target ? runtime.getClient(target.serverId) : null;
-    if (!client) {
-      setCreateError("No connected host supports tasks");
-      return;
-    }
-    setCreating(true);
-    setCreateError(null);
+  const syncNow = useCallback(async () => {
+    if (syncHosts.length === 0) return;
+    setSyncState({ kind: "running" });
     try {
-      const repos = newRepos
-        .split(",")
-        .map((repo) => repo.trim())
-        .filter(Boolean);
-      const origin = newOrigin.trim();
-      const payload = await client.tasksCoreCreate({
-        title,
-        ...(repos.length > 0 ? { repos } : {}),
-        ...(origin ? { origin } : {}),
-      });
-      if (payload.error) {
-        throw new Error(payload.error);
-      }
-      setNewTitle("");
-      setNewRepos("");
-      setNewOrigin("");
-      setShowCreate(false);
-      refetch();
-    } catch (error) {
-      setCreateError(toErrorMessage(error));
-    } finally {
-      setCreating(false);
-    }
-  }, [newTitle, newRepos, newOrigin, supportedHosts, runtime, refetch]);
-
-  const handleSetStatus = useCallback(
-    async (task: AggregatedTask, status: "done" | "open") => {
-      const client = runtime.getClient(task.serverId);
-      if (!client) return;
-      setMutatingTaskId(task.id);
-      try {
-        const payload = await client.tasksCoreUpdate({ id: task.id, status });
+      let created = 0;
+      let updated = 0;
+      let closed = 0;
+      const originErrors: string[] = [];
+      for (const host of syncHosts) {
+        const client = runtime.getClient(host.serverId);
+        if (!client) continue;
+        const payload = await client.tasksSyncRun();
         if (payload.error) {
           throw new Error(payload.error);
         }
-      } finally {
-        setMutatingTaskId(null);
-        refetch();
+        created += payload.created;
+        updated += payload.updated;
+        closed += payload.closed;
+        for (const originError of payload.originErrors) {
+          originErrors.push(`${originError.provider}: ${originError.message}`);
+        }
       }
-    },
-    [runtime, refetch],
-  );
+      setSyncState({
+        kind: "done",
+        summary: `Synced — ${created} new, ${updated} updated, ${closed} closed`,
+        originErrors,
+      });
+      refetch();
+    } catch (error) {
+      setSyncState({ kind: "error", message: toErrorMessage(error) });
+      refetch();
+    }
+  }, [syncHosts, runtime, refetch]);
 
-  const handleDelete = useCallback(
-    async (task: AggregatedTask) => {
+  // Sync once per screen visit as soon as a sync-capable host is connected.
+  const hasAutoSyncedRef = useRef(false);
+  const syncHostsReady = syncHosts.length > 0;
+  useEffect(() => {
+    if (!syncHostsReady || hasAutoSyncedRef.current) return;
+    hasAutoSyncedRef.current = true;
+    void syncNow();
+  }, [syncHostsReady, syncNow]);
+
+  const handleSaveRepos = useCallback(
+    async (task: AggregatedTask, repos: string[]) => {
       const client = runtime.getClient(task.serverId);
       if (!client) return;
-      setMutatingTaskId(task.id);
-      try {
-        await client.tasksCoreDelete(task.id);
-      } finally {
-        setMutatingTaskId(null);
-        refetch();
+      const payload = await client.tasksCoreUpdate({ id: task.id, repos });
+      if (payload.error) {
+        throw new Error(payload.error);
       }
+      refetch();
     },
     [runtime, refetch],
   );
@@ -154,7 +132,6 @@ function TasksScreenContent(): ReactElement {
           status: payload.issue.status,
           rawStatus: payload.issue.rawStatus,
           title: payload.issue.title,
-          url: payload.issue.url,
         });
       } catch (error) {
         setOriginLookup(key, { kind: "error", message: toErrorMessage(error) });
@@ -163,8 +140,11 @@ function TasksScreenContent(): ReactElement {
     [runtime, setOriginLookup],
   );
 
+  const openTasks = useMemo(() => tasks.filter((task) => task.status !== "done"), [tasks]);
+  const doneTasks = useMemo(() => tasks.filter((task) => task.status === "done"), [tasks]);
   const singleHost = hosts.length <= 1;
   const showLoadError = isError && loadState.status !== "loaded";
+  const syncing = syncState.kind === "running";
 
   let body: ReactElement;
   if (!anyHostSupported) {
@@ -193,17 +173,26 @@ function TasksScreenContent(): ReactElement {
     body = (
       <View style={styles.body}>
         <View style={styles.toolbar}>
-          <Text style={styles.toolbarHint}>
-            {tasks.length === 1 ? "1 task" : `${tasks.length} tasks`}
-          </Text>
+          <View style={styles.toolbarStatus}>
+            <Text style={styles.toolbarHint}>
+              {openTasks.length === 1 ? "1 open task" : `${openTasks.length} open tasks`}
+            </Text>
+            {syncState.kind === "done" ? (
+              <Text style={styles.toolbarHint}>{syncState.summary}</Text>
+            ) : null}
+            {syncState.kind === "error" ? (
+              <Text style={styles.errorText}>{syncState.message}</Text>
+            ) : null}
+          </View>
           <Button
             variant="outline"
-            leftIcon={Plus}
+            leftIcon={RefreshCw}
             size="sm"
-            onPress={toggleCreate}
-            testID="tasks-new"
+            loading={syncing}
+            onPress={syncNow}
+            testID="tasks-sync-now"
           >
-            New task
+            Sync now
           </Button>
         </View>
         <ScrollView
@@ -213,78 +202,56 @@ function TasksScreenContent(): ReactElement {
           keyboardShouldPersistTaps="handled"
           testID="tasks-list"
         >
-          {showCreate ? (
-            <View style={styles.card}>
-              <Field label="Title" error={createError}>
-                <FormTextInput
-                  value={newTitle}
-                  onChangeText={setNewTitle}
-                  placeholder="What needs to happen"
-                  testID="tasks-new-title"
-                />
-              </Field>
-              <Field label="Repositories" hint="Comma-separated: owner/repo, /path/to/checkout">
-                <FormTextInput
-                  value={newRepos}
-                  onChangeText={setNewRepos}
-                  placeholder="acme/backend, acme/frontend"
-                  autoCapitalize="none"
-                  testID="tasks-new-repos"
-                />
-              </Field>
-              <Field label="Origin" hint="jira:TCE-123, azure:12345, linear:HUG-1">
-                <FormTextInput
-                  value={newOrigin}
-                  onChangeText={setNewOrigin}
-                  placeholder="provider:key (optional)"
-                  autoCapitalize="none"
-                  testID="tasks-new-origin"
-                />
-              </Field>
-              <View style={styles.cardActions}>
-                <Button variant="ghost" size="sm" onPress={closeCreate}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="default"
-                  size="sm"
-                  loading={creating}
-                  onPress={handleCreate}
-                  testID="tasks-new-create"
-                >
-                  Create
-                </Button>
-              </View>
+          {syncState.kind === "done" && syncState.originErrors.length > 0 ? (
+            <View style={styles.errorsBanner}>
+              {syncState.originErrors.map((message) => (
+                <Text key={message} style={styles.errorsBannerText}>
+                  {message}
+                </Text>
+              ))}
             </View>
           ) : null}
           {hostErrors.length > 0 ? <TasksHostErrorsBanner errors={hostErrors} /> : null}
-          {tasks.length === 0 && !showCreate ? (
+          {tasks.length === 0 ? (
             <View style={styles.centeredGrow}>
               <ClipboardList size={styles.emptyIcon.width} color={styles.emptyIcon.color} />
               <View style={styles.emptyTextStack}>
-                <Text style={styles.emptyTitle}>No tasks yet</Text>
+                <Text style={styles.emptyTitle}>No tasks synced yet</Text>
                 <Text style={styles.emptyDescription}>
-                  Tasks can span multiple repositories and link to Jira, Azure Boards, GitLab, or
-                  Linear issues.
+                  Tasks mirror your assigned issues from Jira, Azure Boards, GitLab, and Linear.
+                  Configure credentials under origins in the daemon config, then sync.
                 </Text>
               </View>
-              <Button variant="outline" leftIcon={Plus} onPress={openCreate}>
-                New task
+              <Button variant="outline" leftIcon={RefreshCw} loading={syncing} onPress={syncNow}>
+                Sync now
               </Button>
             </View>
           ) : (
-            tasks.map((task) => (
-              <TaskCard
-                key={`${task.serverId}:${task.id}`}
-                task={task}
-                singleHost={singleHost}
-                mutating={mutatingTaskId === task.id}
-                originLookup={originLookups.get(`${task.serverId}:${task.id}`)}
-                onSetStatus={handleSetStatus}
-                onDelete={handleDelete}
-                onCheckOrigin={handleCheckOrigin}
-              />
-            ))
+            <>
+              {openTasks.map((task) => (
+                <TaskCard
+                  key={`${task.serverId}:${task.id}`}
+                  task={task}
+                  singleHost={singleHost}
+                  originLookup={originLookups.get(`${task.serverId}:${task.id}`)}
+                  onSaveRepos={handleSaveRepos}
+                  onCheckOrigin={handleCheckOrigin}
+                />
+              ))}
+              {doneTasks.length > 0 ? (
+                <Text style={styles.sectionLabel}>{`Done (${doneTasks.length})`}</Text>
+              ) : null}
+              {doneTasks.map((task) => (
+                <TaskCard
+                  key={`${task.serverId}:${task.id}`}
+                  task={task}
+                  singleHost={singleHost}
+                  originLookup={originLookups.get(`${task.serverId}:${task.id}`)}
+                  onSaveRepos={handleSaveRepos}
+                  onCheckOrigin={handleCheckOrigin}
+                />
+              ))}
+            </>
           )}
         </ScrollView>
       </View>
@@ -302,30 +269,55 @@ function TasksScreenContent(): ReactElement {
 function TaskCard({
   task,
   singleHost,
-  mutating,
   originLookup,
-  onSetStatus,
-  onDelete,
+  onSaveRepos,
   onCheckOrigin,
 }: {
   task: AggregatedTask;
   singleHost: boolean;
-  mutating: boolean;
   originLookup: OriginLookupState | undefined;
-  onSetStatus: (task: AggregatedTask, status: "done" | "open") => void;
-  onDelete: (task: AggregatedTask) => void;
+  onSaveRepos: (task: AggregatedTask, repos: string[]) => Promise<void>;
   onCheckOrigin: (task: AggregatedTask) => void;
 }): ReactElement {
   const isDone = task.status === "done";
+  const [editingRepos, setEditingRepos] = useState(false);
+  const [reposDraft, setReposDraft] = useState("");
+  const [savingRepos, setSavingRepos] = useState(false);
+  const [repoError, setRepoError] = useState<string | null>(null);
+
   const titleStyle = useMemo(
     () => (isDone ? [styles.cardTitle, styles.cardTitleDone] : [styles.cardTitle]),
     [isDone],
   );
-  const handleToggleStatus = useCallback(
-    () => onSetStatus(task, isDone ? "open" : "done"),
-    [onSetStatus, task, isDone],
-  );
-  const handleDeletePress = useCallback(() => onDelete(task), [onDelete, task]);
+
+  const startEditRepos = useCallback(() => {
+    setReposDraft(task.repos.join(", "));
+    setRepoError(null);
+    setEditingRepos(true);
+  }, [task.repos]);
+
+  const cancelEditRepos = useCallback(() => {
+    setEditingRepos(false);
+    setRepoError(null);
+  }, []);
+
+  const saveRepos = useCallback(async () => {
+    setSavingRepos(true);
+    setRepoError(null);
+    try {
+      const repos = reposDraft
+        .split(",")
+        .map((repo) => repo.trim())
+        .filter(Boolean);
+      await onSaveRepos(task, repos);
+      setEditingRepos(false);
+    } catch (error) {
+      setRepoError(toErrorMessage(error));
+    } finally {
+      setSavingRepos(false);
+    }
+  }, [reposDraft, onSaveRepos, task]);
+
   const handleCheckOriginPress = useCallback(() => onCheckOrigin(task), [onCheckOrigin, task]);
 
   return (
@@ -336,8 +328,37 @@ function TaskCard({
         </Text>
         <Text style={styles.statusBadge}>{task.status}</Text>
       </View>
-      {!singleHost ? <Text style={styles.metaText}>{task.serverName}</Text> : null}
-      {task.repos.length > 0 ? (
+      <View style={styles.metaRow}>
+        {task.origin ? <Text style={styles.metaText}>{task.origin}</Text> : null}
+        {!singleHost ? <Text style={styles.metaText}>{task.serverName}</Text> : null}
+      </View>
+      {editingRepos ? (
+        <View style={styles.repoEditor}>
+          <Field label="Linked repositories" error={repoError} hint="Comma-separated">
+            <FormTextInput
+              value={reposDraft}
+              onChangeText={setReposDraft}
+              placeholder="acme/backend, /path/to/checkout"
+              autoCapitalize="none"
+              testID={`task-repos-input-${task.id}`}
+            />
+          </Field>
+          <View style={styles.cardActions}>
+            <Button variant="ghost" size="sm" onPress={cancelEditRepos}>
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              loading={savingRepos}
+              onPress={saveRepos}
+              testID={`task-repos-save-${task.id}`}
+            >
+              Save
+            </Button>
+          </View>
+        </View>
+      ) : (
         <View style={styles.chipsRow}>
           {task.repos.map((repo) => (
             <View key={repo} style={styles.chip}>
@@ -346,11 +367,27 @@ function TaskCard({
               </Text>
             </View>
           ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={FolderGit2}
+            onPress={startEditRepos}
+            testID={`task-repos-edit-${task.id}`}
+          >
+            {task.repos.length > 0 ? "Edit repos" : "Link repos"}
+          </Button>
         </View>
+      )}
+      {originLookup?.kind === "loaded" ? (
+        <Text style={styles.originResult}>
+          {`Origin now: [${originLookup.status}] ${originLookup.rawStatus}`}
+        </Text>
+      ) : null}
+      {originLookup?.kind === "error" ? (
+        <Text style={styles.errorText}>{originLookup.message}</Text>
       ) : null}
       {task.origin ? (
-        <View style={styles.originRow}>
-          <Text style={styles.metaText}>{task.origin}</Text>
+        <View style={styles.cardActions}>
           <Button
             variant="ghost"
             size="sm"
@@ -363,34 +400,6 @@ function TaskCard({
           </Button>
         </View>
       ) : null}
-      {originLookup?.kind === "loaded" ? (
-        <Text style={styles.originResult}>
-          {`Origin: [${originLookup.status}] ${originLookup.rawStatus} — ${originLookup.title}`}
-        </Text>
-      ) : null}
-      {originLookup?.kind === "error" ? (
-        <Text style={styles.originError}>{originLookup.message}</Text>
-      ) : null}
-      <View style={styles.cardActions}>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={mutating}
-          onPress={handleDeletePress}
-          testID={`task-delete-${task.id}`}
-        >
-          Delete
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={mutating}
-          onPress={handleToggleStatus}
-          testID={`task-toggle-${task.id}`}
-        >
-          {isDone ? "Reopen" : "Mark done"}
-        </Button>
-      </View>
     </View>
   );
 }
@@ -438,9 +447,18 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: { xs: theme.spacing[3], md: theme.spacing[6] },
     paddingTop: theme.spacing[4],
   },
+  toolbarStatus: {
+    flexShrink: 1,
+    gap: theme.spacing[1],
+  },
   toolbarHint: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
+  },
+  sectionLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    paddingTop: theme.spacing[3],
   },
   scroll: {
     flex: 1,
@@ -486,9 +504,15 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[1],
     overflow: "hidden",
   },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[3],
+  },
   chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
+    alignItems: "center",
     gap: theme.spacing[2],
   },
   chip: {
@@ -502,18 +526,11 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.xs,
   },
-  originRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  repoEditor: {
     gap: theme.spacing[2],
   },
   originResult: {
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
-  },
-  originError: {
-    color: theme.colors.palette.red[300],
     fontSize: theme.fontSize.sm,
   },
   cardActions: {
@@ -541,6 +558,10 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.lg,
     textAlign: "center",
   },
+  errorText: {
+    color: theme.colors.palette.red[300],
+    fontSize: theme.fontSize.sm,
+  },
   spinner: {
     color: theme.colors.foregroundMuted,
   },
@@ -561,6 +582,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     textAlign: "center",
-    maxWidth: 420,
+    maxWidth: 460,
   },
 }));

@@ -226,6 +226,7 @@ export const OriginsConfigSchema = z
         baseUrl: z.string(),
         email: z.string(),
         apiToken: z.string(),
+        jql: z.string().optional(),
       })
       .strict()
       .optional(),
@@ -234,6 +235,7 @@ export const OriginsConfigSchema = z
         organization: z.string(),
         project: z.string(),
         pat: z.string(),
+        wiql: z.string().optional(),
       })
       .strict()
       .optional(),

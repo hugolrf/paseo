@@ -475,6 +475,10 @@ export type TasksOriginsGetIssuePayload = Extract<
   SessionOutboundMessage,
   { type: "tasks.origins.get_issue.response" }
 >["payload"];
+export type TasksSyncRunPayload = Extract<
+  SessionOutboundMessage,
+  { type: "tasks.sync.run.response" }
+>["payload"];
 export type CheckoutGithubListPullRequestsPayload = Extract<
   SessionOutboundMessage,
   { type: "checkout.github.list_pull_requests.response" }
@@ -3741,6 +3745,17 @@ export class DaemonClient {
         type: "tasks.core.delete.request",
         id,
       },
+    });
+  }
+
+  async tasksSyncRun(requestId?: string): Promise<TasksSyncRunPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"tasks.sync.run.response">({
+      requestId,
+      message: {
+        type: "tasks.sync.run.request",
+      },
+      // Sync sweeps several origin APIs sequentially; give it room.
+      timeout: 120_000,
     });
   }
 

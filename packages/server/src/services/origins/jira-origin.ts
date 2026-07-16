@@ -11,7 +11,12 @@ export interface JiraOriginConfig {
   baseUrl: string; // e.g. https://yourorg.atlassian.net
   email: string;
   apiToken: string;
+  // JQL used by task sync; defaults to the caller's open assigned issues.
+  jql?: string;
 }
+
+const DEFAULT_JIRA_SYNC_JQL =
+  "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC";
 
 const JiraIssueSchema = z.object({
   key: z.string(),
@@ -29,6 +34,10 @@ const JiraIssueSchema = z.object({
       })
       .nullish(),
   }),
+});
+
+const JiraSearchResponseSchema = z.object({
+  issues: z.array(JiraIssueSchema).optional(),
 });
 
 // Jira's statusCategory.key is one of "new" | "indeterminate" | "done".
@@ -63,16 +72,39 @@ export function createJiraOrigin(config: JiraOriginConfig, fetchFn: OriginFetch)
       }
 
       const issue = JiraIssueSchema.parse(await response.json());
-      const rawStatus = issue.fields.status?.name ?? "";
-      return {
-        provider: "jira",
-        key: issue.key,
-        title: issue.fields.summary ?? "",
-        status: normalizeJiraStatus(issue.fields.status?.statusCategory?.key ?? null, rawStatus),
-        rawStatus,
-        url: `${baseUrl}/browse/${issue.key}`,
-        updatedAt: issue.fields.updated ?? null,
-      };
+      return toOriginIssue(baseUrl, issue);
     },
+
+    async listMyIssues(): Promise<OriginIssue[]> {
+      const jql = config.jql ?? DEFAULT_JIRA_SYNC_JQL;
+      const response = await fetchFn(
+        `${baseUrl}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=100&fields=summary,status,updated`,
+        {
+          headers: {
+            Authorization: `Basic ${basicAuth}`,
+            Accept: "application/json",
+          },
+        },
+      );
+      if (!response.ok) {
+        throw new OriginRequestError({ provider: "jira", status: response.status });
+      }
+
+      const parsed = JiraSearchResponseSchema.parse(await response.json());
+      return (parsed.issues ?? []).map((issue) => toOriginIssue(baseUrl, issue));
+    },
+  };
+}
+
+function toOriginIssue(baseUrl: string, issue: z.infer<typeof JiraIssueSchema>): OriginIssue {
+  const rawStatus = issue.fields.status?.name ?? "";
+  return {
+    provider: "jira",
+    key: issue.key,
+    title: issue.fields.summary ?? "",
+    status: normalizeJiraStatus(issue.fields.status?.statusCategory?.key ?? null, rawStatus),
+    rawStatus,
+    url: `${baseUrl}/browse/${issue.key}`,
+    updatedAt: issue.fields.updated ?? null,
   };
 }

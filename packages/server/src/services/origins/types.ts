@@ -29,6 +29,9 @@ export interface OriginIssue {
 export interface OriginProvider {
   readonly id: OriginProviderId;
   fetchIssue(key: string): Promise<OriginIssue>;
+  // The issues this origin currently assigns to the configured user (the
+  // sync source). Providers honor a config-supplied query when present.
+  listMyIssues(): Promise<OriginIssue[]>;
 }
 
 // Injectable fetch so adapters are testable without network access.

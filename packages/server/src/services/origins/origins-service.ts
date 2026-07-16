@@ -24,6 +24,12 @@ export interface OriginsService {
   // "gitlab:group/app#42", "linear:HUG-1".
   getIssue(ref: string): Promise<OriginIssue>;
   configuredProviders(): OriginProviderId[];
+  // My open issues across every configured origin (the task-sync source).
+  // A failing origin contributes an error instead of sinking the whole sweep.
+  listAllMyIssues(): Promise<{
+    issues: OriginIssue[];
+    errors: { provider: OriginProviderId; message: string }[];
+  }>;
 }
 
 export interface CreateOriginsServiceOptions {
@@ -85,6 +91,29 @@ export function createOriginsService(options: CreateOriginsServiceOptions): Orig
       const config = options.readConfig();
       if (!config) return [];
       return ORIGIN_PROVIDER_IDS.filter((id) => config[id] !== undefined);
+    },
+
+    async listAllMyIssues() {
+      const config = options.readConfig();
+      const providers = ORIGIN_PROVIDER_IDS.filter((id) => config?.[id] !== undefined);
+      const issues: OriginIssue[] = [];
+      const errors: { provider: OriginProviderId; message: string }[] = [];
+
+      await Promise.all(
+        providers.map(async (providerId) => {
+          try {
+            const providerIssues = await buildProvider(providerId).listMyIssues();
+            issues.push(...providerIssues);
+          } catch (error) {
+            errors.push({
+              provider: providerId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }),
+      );
+
+      return { issues, errors };
     },
   };
 }
