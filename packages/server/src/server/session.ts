@@ -1798,6 +1798,8 @@ export class Session {
         return this.tasksSession.handleTasksCoreUpdateRequest(msg);
       case "tasks.core.delete.request":
         return this.tasksSession.handleTasksCoreDeleteRequest(msg);
+      case "tasks.origins.get_issue.request":
+        return this.tasksSession.handleTasksOriginsGetIssueRequest(msg);
       default:
         return undefined;
     }

@@ -23,6 +23,7 @@ export interface Task {
   priority?: number; // lower number = higher priority (1 is highest), tasks with priority sort before those without
   repos: string[]; // repository refs this task spans (workspace cwd, "owner/repo", or remote URL); a task may target zero, one, or many repos
   agentIds: string[]; // Paseo agent (work session) ids attached to this task
+  origin?: string; // upstream issue ref as "<provider>:<key>", e.g. "jira:APLIC-123", "azure:12345", "gitlab:group/proj#42", "linear:HUG-1"
   raw: string; // the raw markdown file content
 }
 
@@ -36,6 +37,7 @@ export interface CreateTaskOptions {
   priority?: number;
   repos?: string[];
   agentIds?: string[];
+  origin?: string;
 }
 
 export interface TaskStore {

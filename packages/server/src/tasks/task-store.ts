@@ -178,6 +178,7 @@ export class FileTaskStore implements TaskStore {
       priority: opts?.priority,
       repos: opts?.repos ?? [],
       agentIds: opts?.agentIds ?? [],
+      origin: opts?.origin,
       raw: "", // will be set after serialization
     };
 

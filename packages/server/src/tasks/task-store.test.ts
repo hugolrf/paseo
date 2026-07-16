@@ -989,6 +989,33 @@ describe("agent links", () => {
   });
 });
 
+describe("origin", () => {
+  it("creates a task without origin by default", async () => {
+    const task = await store.create("Task");
+
+    expect(task.origin).toBeUndefined();
+  });
+
+  it("persists origin across store instances", async () => {
+    const task = await store.create("Task from Jira", { origin: "jira:TCE-123" });
+
+    const store2 = new FileTaskStore(tempDir);
+    const retrieved = await store2.get(task.id);
+
+    expect(retrieved?.origin).toBe("jira:TCE-123");
+    expect(retrieved?.raw).toContain("origin: jira:TCE-123");
+  });
+
+  it("updates origin", async () => {
+    const task = await store.create("Task");
+
+    await store.update(task.id, { origin: "linear:HUG-1" });
+
+    const retrieved = await store.get(task.id);
+    expect(retrieved?.origin).toBe("linear:HUG-1");
+  });
+});
+
 describe("getDepTree", () => {
   it("returns empty for task with no deps", async () => {
     const task = await store.create("Leaf task");

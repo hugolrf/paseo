@@ -30,6 +30,8 @@ import {
   TasksCoreListResponseSchema,
   TasksCoreUpdateResponseSchema,
   TasksCoreDeleteResponseSchema,
+  TasksOriginsGetIssueRequestSchema,
+  TasksOriginsGetIssueResponseSchema,
 } from "./tasks/rpc-schemas.js";
 import {
   ScheduleCreateRequestSchema,
@@ -2389,6 +2391,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   TasksCoreListRequestSchema,
   TasksCoreUpdateRequestSchema,
   TasksCoreDeleteRequestSchema,
+  TasksOriginsGetIssueRequestSchema,
 ]);
 
 export type SessionInboundMessage = z.infer<typeof SessionInboundMessageSchema>;
@@ -2605,6 +2608,8 @@ export const ServerInfoStatusPayloadSchema = z
         tasksCore: z.boolean().optional(),
         // COMPAT(checkoutGithubPrReview): added in v0.1.110 (hugolrf fork), drop the gate when floor >= v0.1.110.
         checkoutGithubPrReview: z.boolean().optional(),
+        // COMPAT(tasksOrigins): added in v0.1.110 (hugolrf fork), drop the gate when floor >= v0.1.110.
+        tasksOrigins: z.boolean().optional(),
         // COMPAT(providerRemoval): added in v0.1.105, drop the gate when floor >= v0.1.105.
         providerRemoval: z.boolean().optional(),
       })
@@ -4793,6 +4798,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   TasksCoreListResponseSchema,
   TasksCoreUpdateResponseSchema,
   TasksCoreDeleteResponseSchema,
+  TasksOriginsGetIssueResponseSchema,
   DaemonUpdateProgressMessageSchema,
   DaemonUpdateResponseSchema,
 ]);

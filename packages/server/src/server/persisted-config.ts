@@ -219,6 +219,40 @@ function normalizeAgentProviders(value: unknown): unknown {
   };
 }
 
+export const OriginsConfigSchema = z
+  .object({
+    jira: z
+      .object({
+        baseUrl: z.string(),
+        email: z.string(),
+        apiToken: z.string(),
+      })
+      .strict()
+      .optional(),
+    azure: z
+      .object({
+        organization: z.string(),
+        project: z.string(),
+        pat: z.string(),
+      })
+      .strict()
+      .optional(),
+    gitlab: z
+      .object({
+        baseUrl: z.string().optional(),
+        token: z.string(),
+      })
+      .strict()
+      .optional(),
+    linear: z
+      .object({
+        apiKey: z.string(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 export const PersistedConfigSchema = z
   .object({
     $schema: z.string().optional(),
@@ -310,6 +344,10 @@ export const PersistedConfigSchema = z
       })
       .strict()
       .optional(),
+
+    // Issue-tracker origins for the tasks subsystem. Credentials live here,
+    // in the daemon's own config — never exposed over the mutable-config RPC.
+    origins: OriginsConfigSchema.optional(),
 
     log: LogConfigSchema.optional(),
   })

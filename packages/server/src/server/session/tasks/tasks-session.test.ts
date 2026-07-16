@@ -5,6 +5,7 @@ import { join } from "node:path";
 import pino from "pino";
 import type { SessionOutboundMessage } from "../../messages.js";
 import { TasksSession } from "./tasks-session.js";
+import type { OriginsService } from "../../../services/origins/origins-service.js";
 
 let tempHome: string;
 let emitted: SessionOutboundMessage[];
@@ -119,6 +120,52 @@ describe("tasks.core.update", () => {
     const response = lastEmitted("tasks.core.update.response");
     expect(response.payload.task).toBeNull();
     expect(response.payload.error).toContain("Task not found");
+  });
+});
+
+describe("tasks.origins.get_issue", () => {
+  it("resolves an issue through the origins service", async () => {
+    const origins: OriginsService = {
+      getIssue: async (ref) => ({
+        provider: "jira",
+        key: ref.split(":")[1],
+        title: "Fetched from origin",
+        status: "in_progress",
+        rawStatus: "Em andamento",
+        url: "https://acme.atlassian.net/browse/TCE-123",
+        updatedAt: null,
+      }),
+      configuredProviders: () => ["jira"],
+    };
+    const sessionWithOrigins = new TasksSession({
+      host: { emit: (msg) => emitted.push(msg) },
+      paseoHome: tempHome,
+      logger: pino({ level: "silent" }),
+      originsService: origins,
+    });
+
+    await sessionWithOrigins.handleTasksOriginsGetIssueRequest({
+      type: "tasks.origins.get_issue.request",
+      ref: "jira:TCE-123",
+      requestId: "req-1",
+    });
+
+    const response = lastEmitted("tasks.origins.get_issue.response");
+    expect(response.payload.error).toBeNull();
+    expect(response.payload.issue?.key).toBe("TCE-123");
+    expect(response.payload.issue?.status).toBe("in_progress");
+  });
+
+  it("responds with an error when the provider is not configured", async () => {
+    await session.handleTasksOriginsGetIssueRequest({
+      type: "tasks.origins.get_issue.request",
+      ref: "linear:HUG-1",
+      requestId: "req-1",
+    });
+
+    const response = lastEmitted("tasks.origins.get_issue.response");
+    expect(response.payload.issue).toBeNull();
+    expect(response.payload.error).toContain("not configured");
   });
 });
 

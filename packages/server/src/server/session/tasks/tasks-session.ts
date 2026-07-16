@@ -2,6 +2,11 @@ import { join } from "node:path";
 import type pino from "pino";
 import { getErrorMessage } from "@getpaseo/protocol/error-utils";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../../messages.js";
+import { loadPersistedConfig } from "../../persisted-config.js";
+import {
+  createOriginsService,
+  type OriginsService,
+} from "../../../services/origins/origins-service.js";
 import { FileTaskStore } from "../../../tasks/task-store.js";
 import type { Task, TaskStore } from "../../../tasks/types.js";
 
@@ -13,8 +18,10 @@ export interface TasksSessionOptions {
   host: TasksSessionHost;
   paseoHome: string;
   logger: pino.Logger;
-  // Test seam; production uses the file store under $PASEO_HOME/tasks.
+  // Test seams; production uses the file store under $PASEO_HOME/tasks and
+  // an origins service reading $PASEO_HOME/config.json.
   store?: TaskStore;
+  originsService?: OriginsService;
 }
 
 type TaskPayload = Omit<Task, "raw">;
@@ -32,12 +39,41 @@ function toTaskPayload(task: Task): TaskPayload {
 export class TasksSession {
   private readonly host: TasksSessionHost;
   private readonly store: TaskStore;
+  private readonly origins: OriginsService;
   private readonly logger: pino.Logger;
 
   constructor(options: TasksSessionOptions) {
     this.host = options.host;
     this.store = options.store ?? new FileTaskStore(join(options.paseoHome, "tasks"));
+    this.origins =
+      options.originsService ??
+      createOriginsService({
+        readConfig: () => loadPersistedConfig(options.paseoHome, options.logger).origins,
+      });
     this.logger = options.logger;
+  }
+
+  async handleTasksOriginsGetIssueRequest(
+    msg: Extract<SessionInboundMessage, { type: "tasks.origins.get_issue.request" }>,
+  ): Promise<void> {
+    try {
+      const issue = await this.origins.getIssue(msg.ref);
+      this.host.emit({
+        type: "tasks.origins.get_issue.response",
+        payload: { ref: msg.ref, issue, error: null, requestId: msg.requestId },
+      });
+    } catch (error) {
+      this.logger.warn({ err: error, ref: msg.ref }, "tasks.origins.get_issue failed");
+      this.host.emit({
+        type: "tasks.origins.get_issue.response",
+        payload: {
+          ref: msg.ref,
+          issue: null,
+          error: getErrorMessage(error),
+          requestId: msg.requestId,
+        },
+      });
+    }
   }
 
   async handleTasksCoreCreateRequest(
@@ -54,6 +90,7 @@ export class TasksSession {
         priority: msg.priority,
         repos: msg.repos,
         agentIds: msg.agentIds,
+        origin: msg.origin,
       });
       this.host.emit({
         type: "tasks.core.create.response",
@@ -99,6 +136,7 @@ export class TasksSession {
       if (msg.priority !== undefined) changes.priority = msg.priority;
       if (msg.repos !== undefined) changes.repos = msg.repos;
       if (msg.agentIds !== undefined) changes.agentIds = msg.agentIds;
+      if (msg.origin !== undefined) changes.origin = msg.origin;
 
       const task = await this.store.update(msg.id, changes);
       this.host.emit({

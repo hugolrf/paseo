@@ -24,6 +24,8 @@ export const TaskPayloadSchema = z.object({
   repos: z.array(z.string()),
   // Paseo agent (work session) ids attached to this task.
   agentIds: z.array(z.string()),
+  // Upstream issue ref as "<provider>:<key>", e.g. "jira:TCE-123" or "linear:HUG-1".
+  origin: z.string().optional(),
 });
 
 export const TasksCoreCreateRequestSchema = z.object({
@@ -38,6 +40,7 @@ export const TasksCoreCreateRequestSchema = z.object({
   priority: z.number().optional(),
   repos: z.array(z.string()).optional(),
   agentIds: z.array(z.string()).optional(),
+  origin: z.string().optional(),
   requestId: z.string(),
 });
 
@@ -59,6 +62,7 @@ export const TasksCoreUpdateRequestSchema = z.object({
   priority: z.number().optional(),
   repos: z.array(z.string()).optional(),
   agentIds: z.array(z.string()).optional(),
+  origin: z.string().optional(),
   requestId: z.string(),
 });
 
@@ -100,6 +104,42 @@ export const TasksCoreDeleteResponseSchema = z.object({
   payload: z.object({
     id: z.string(),
     success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const OriginIssueStatusSchema = z.enum([
+  "todo",
+  "in_progress",
+  "in_review",
+  "done",
+  "canceled",
+  "unknown",
+]);
+
+export const OriginIssuePayloadSchema = z.object({
+  provider: z.enum(["jira", "azure", "gitlab", "linear"]),
+  key: z.string(),
+  title: z.string(),
+  status: OriginIssueStatusSchema,
+  rawStatus: z.string(),
+  url: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+});
+
+export const TasksOriginsGetIssueRequestSchema = z.object({
+  type: z.literal("tasks.origins.get_issue.request"),
+  // "<provider>:<key>", e.g. "jira:TCE-123", "azure:12345", "linear:HUG-1".
+  ref: z.string(),
+  requestId: z.string(),
+});
+
+export const TasksOriginsGetIssueResponseSchema = z.object({
+  type: z.literal("tasks.origins.get_issue.response"),
+  payload: z.object({
+    ref: z.string(),
+    issue: OriginIssuePayloadSchema.nullable(),
     error: z.string().nullable(),
     requestId: z.string(),
   }),

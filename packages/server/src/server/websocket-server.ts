@@ -1270,6 +1270,8 @@ export class VoiceAssistantWebSocketServer {
         tasksCore: true,
         // COMPAT(checkoutGithubPrReview): added in v0.1.110 (hugolrf fork), drop the gate when floor >= v0.1.110.
         checkoutGithubPrReview: true,
+        // COMPAT(tasksOrigins): added in v0.1.110 (hugolrf fork), drop the gate when floor >= v0.1.110.
+        tasksOrigins: true,
       },
     };
   }

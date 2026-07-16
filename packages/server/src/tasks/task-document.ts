@@ -32,6 +32,10 @@ function serializeTask(task: Task): string {
     frontmatterLines.push(`agentIds: [${task.agentIds.join(", ")}]`);
   }
 
+  if (task.origin) {
+    frontmatterLines.push(`origin: ${task.origin}`);
+  }
+
   frontmatterLines.push("---");
 
   const frontmatter = frontmatterLines.join("\n");
@@ -133,6 +137,7 @@ function parseTask(content: string): Task {
     priority,
     repos: parseList("repos"),
     agentIds: parseList("agentIds"),
+    origin: getValue("origin") || undefined,
     raw: content,
   };
 }
